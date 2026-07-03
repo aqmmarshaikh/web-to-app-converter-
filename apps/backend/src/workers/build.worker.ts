@@ -7,6 +7,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
+import sharp from 'sharp';
 
 const execAsync = promisify(exec);
 
@@ -570,47 +571,144 @@ ${config.pullToRefresh ? '</androidx.swiperefreshlayout.widget.SwipeRefreshLayou
 `
   );
 
-  // Generate adaptive icon (drawable)
-  await fs.writeFile(
-    `${buildDir}/app/src/main/res/drawable/ic_launcher_foreground.xml`,
-    `<?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="${themeColor}"
-        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
-</vector>
-`
-  );
+  // =====================================================
+  // App Icon Generation — resize user icon or generate default
+  // =====================================================
+  const mipmapSizes: Record<string, number> = {
+    'mdpi': 48,
+    'hdpi': 72,
+    'xhdpi': 96,
+    'xxhdpi': 144,
+    'xxxhdpi': 192,
+  };
 
-  // Generate mipmap ic_launcher and ic_launcher_round as PNG fallbacks for pre-API 26
-  // This is a minimal valid 48x48 white PNG placeholder for all density buckets
-  const minimalPng = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
-    'base64'
-  );
-  for (const density of ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+  // Adaptive icon foreground must be 108dp; at xxxhdpi that's 432px
+  const adaptiveForegroundSizes: Record<string, number> = {
+    'mdpi': 108,
+    'hdpi': 162,
+    'xhdpi': 216,
+    'xxhdpi': 324,
+    'xxxhdpi': 432,
+  };
+
+  let iconBuffer: Buffer | null = null;
+  let customIconRequested = false;
+
+  // Try to load user-provided icon
+  if (config.iconPath) {
+    customIconRequested = true;
+    try {
+      iconBuffer = await fs.readFile(config.iconPath);
+      logger.info(`Loaded icon from path: ${config.iconPath}`);
+    } catch (err: any) {
+      throw new Error(`Uploaded App Icon could not be processed. Failed to read file: ${err.message}`);
+    }
+  } else if (config.iconUrl) {
+    customIconRequested = true;
+    try {
+      const resp = await fetch(config.iconUrl);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.startsWith('image/')) {
+        throw new Error(`Invalid content-type: ${contentType}`);
+      }
+      iconBuffer = Buffer.from(await resp.arrayBuffer());
+      logger.info(`Downloaded icon from URL: ${config.iconUrl}`);
+    } catch (err: any) {
+      throw new Error(`Uploaded App Icon could not be processed. Failed to download URL: ${err.message}`);
+    }
+  }
+
+  // Validate the loaded icon with sharp
+  if (iconBuffer && customIconRequested) {
+    try {
+      const meta = await sharp(iconBuffer).metadata();
+      if (!meta.width || !meta.height || meta.width < 48 || meta.height < 48) {
+        throw new Error(`Uploaded App Icon could not be processed. Dimensions too small (${meta.width}x${meta.height}).`);
+      }
+    } catch (err: any) {
+      if (err.message.includes('Uploaded App Icon')) throw err;
+      throw new Error(`Uploaded App Icon could not be processed. Image is corrupted or unreadable. Error: ${err.message}`);
+    }
+  }
+
+  // Generate default icon if none provided or loading failed
+  if (!iconBuffer) {
+    if (customIconRequested) {
+      throw new Error('Uploaded App Icon could not be processed. Icon was requested but buffer is empty.');
+    }
+    const letter = (appName.charAt(0) || 'A').toUpperCase();
+    const bgColor = themeColor || '#4A90D9';
+    // Create a 1024x1024 Material-style icon: colored circle with white letter
+    const svgIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="220" fill="${bgColor}"/>
+  <text x="512" y="512" text-anchor="middle" dominant-baseline="central"
+        font-family="sans-serif" font-weight="bold" font-size="540" fill="white">${letter}</text>
+</svg>`;
+    iconBuffer = await sharp(Buffer.from(svgIcon)).png().toBuffer();
+    logger.info(`Generated default icon with letter "${letter}" and color ${bgColor}`);
+  }
+
+  // Resize and write to all mipmap density buckets
+  for (const [density, size] of Object.entries(mipmapSizes)) {
+    const resized = await sharp(iconBuffer)
+      .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+
     await fs.writeFile(
       `${buildDir}/app/src/main/res/mipmap-${density}/ic_launcher.png`,
-      minimalPng
+      resized
     );
+
+    // Round icon: clip to circle
+    const roundMask = Buffer.from(
+      `<svg width="${size}" height="${size}"><circle cx="${size/2}" cy="${size/2}" r="${size/2}" fill="white"/></svg>`
+    );
+    const roundIcon = await sharp(resized)
+      .composite([{ input: roundMask, blend: 'dest-in' }])
+      .png()
+      .toBuffer();
+
     await fs.writeFile(
       `${buildDir}/app/src/main/res/mipmap-${density}/ic_launcher_round.png`,
-      minimalPng
+      roundIcon
     );
   }
 
-  // Generate adaptive icon XML only for mipmap-anydpi-v26 (API 26+)
+  // Generate adaptive icon foreground PNGs (icon centered in 108dp canvas with padding)
+  await fs.mkdir(`${buildDir}/app/src/main/res/mipmap-anydpi-v26`, { recursive: true });
+
+  for (const [density, fgSize] of Object.entries(adaptiveForegroundSizes)) {
+    // The icon safe zone is ~66% of the full 108dp canvas
+    const iconSize = Math.round(fgSize * 0.66);
+    const padding = Math.round((fgSize - iconSize) / 2);
+
+    const foreground = await sharp(iconBuffer)
+      .resize(iconSize, iconSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .extend({
+        top: padding,
+        bottom: fgSize - iconSize - padding,
+        left: padding,
+        right: fgSize - iconSize - padding,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .png()
+      .toBuffer();
+
+    await fs.writeFile(
+      `${buildDir}/app/src/main/res/mipmap-${density}/ic_launcher_foreground.png`,
+      foreground
+    );
+  }
+
+  // Generate adaptive icon XML referencing the PNG foreground
   const adaptiveIconXml = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@android:color/white" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>
 `;
-  await fs.mkdir(`${buildDir}/app/src/main/res/mipmap-anydpi-v26`, { recursive: true });
   await fs.writeFile(
     `${buildDir}/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml`,
     adaptiveIconXml
@@ -1017,6 +1115,17 @@ ${errStderr}
         await fs.rm(buildDir, { recursive: true, force: true });
       } catch (e) {
         logger.warn(`Failed to clean up build dir: ${buildDir}`);
+      }
+
+      // Clean up temp icon file if it was uploaded
+      const iconPath = job.data.config?.iconPath;
+      if (iconPath && iconPath.includes('tmp/icons/')) {
+        try {
+          await fs.unlink(iconPath);
+          logger.info(`Cleaned up temp icon: ${iconPath}`);
+        } catch (e) {
+          // ignore if already deleted
+        }
       }
     }
   },

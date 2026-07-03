@@ -24,6 +24,10 @@ import {
   Bell,
   HardDrive,
   Users,
+  ImageIcon,
+  Upload,
+  Link,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -154,6 +158,16 @@ export default function NewProjectPage() {
   const [fileUploadSupport, setFileUploadSupport] = useState(true);
   const [orientationLock, setOrientationLock] = useState("UNSPECIFIED");
 
+  // App Icon
+  const [iconMode, setIconMode] = useState<"upload" | "url">("upload");
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [iconPreview, setIconPreview] = useState<string | null>(null);
+  const [iconUrl, setIconUrl] = useState("");
+  const [iconError, setIconError] = useState("");
+  const [iconUploading, setIconUploading] = useState(false);
+  const [iconPath, setIconPath] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+
   // Config tab
   const [configTab, setConfigTab] = useState("basic");
 
@@ -253,6 +267,68 @@ export default function NewProjectPage() {
     );
   };
 
+  // Icon file validation and upload
+  const handleIconFile = async (file: File) => {
+    setIconError("");
+
+    // Validate file type
+    const validTypes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
+    if (!validTypes.includes(file.type)) {
+      setIconError("Unsupported format. Use PNG, JPG, or WEBP.");
+      return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      setIconError("File too large. Maximum size is 5MB.");
+      return;
+    }
+
+    // Validate dimensions
+    const img = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = async () => {
+      if (img.width < 512 || img.height < 512) {
+        setIconError(`Image too small: ${img.width}×${img.height}. Minimum: 512×512.`);
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+
+      // Show preview
+      setIconFile(file);
+      setIconPreview(objectUrl);
+      setIconError("");
+
+      // Upload to backend
+      setIconUploading(true);
+      try {
+        const res = await api.uploadIcon(file);
+        if (res.success) {
+          setIconPath(res.data.iconPath);
+          toast.success("Icon uploaded successfully");
+        }
+      } catch (err: any) {
+        setIconError(err.message || "Upload failed");
+        toast.error(err.message || "Icon upload failed");
+      } finally {
+        setIconUploading(false);
+      }
+    };
+    img.onerror = () => {
+      setIconError("Could not read image file.");
+      URL.revokeObjectURL(objectUrl);
+    };
+    img.src = objectUrl;
+  };
+
+  const clearIcon = () => {
+    setIconFile(null);
+    if (iconPreview) URL.revokeObjectURL(iconPreview);
+    setIconPreview(null);
+    setIconPath(null);
+    setIconError("");
+  };
+
   // Handle project creation and build
   const handleGenerate = async () => {
     setLoading(true);
@@ -283,6 +359,8 @@ export default function NewProjectPage() {
           downloadSupport,
           fileUploadSupport,
           orientationLock,
+          ...(iconPath ? { iconPath } : {}),
+          ...(iconMode === "url" && iconUrl ? { iconUrl } : {}),
           floatingActionButton: false,
           pushNotifications: permissions.includes("NOTIFICATIONS"),
           deepLinks: false,
@@ -554,6 +632,140 @@ export default function NewProjectPage() {
                         <Input value={themeColor} onChange={(e) => setThemeColor(e.target.value)} className="flex-1" />
                       </div>
                     </div>
+
+                    {/* App Icon */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="flex items-center gap-2">
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                          App Icon
+                        </Label>
+                        <span className="text-xs text-muted-foreground">Optional · 512×512 min</span>
+                      </div>
+
+                      {/* Mode Toggle */}
+                      <div className="flex gap-1 p-1 bg-background/50 rounded-lg border border-border w-fit">
+                        <button
+                          onClick={() => { setIconMode("upload"); setIconError(""); }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                            iconMode === "upload"
+                              ? "bg-card text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <Upload className="h-3 w-3" />
+                          Upload
+                        </button>
+                        <button
+                          onClick={() => { setIconMode("url"); setIconError(""); }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                            iconMode === "url"
+                              ? "bg-card text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <Link className="h-3 w-3" />
+                          URL
+                        </button>
+                      </div>
+
+                      {iconMode === "upload" && (
+                        <div>
+                          {iconPreview ? (
+                            <div className="flex items-start gap-4">
+                              <div className="relative group">
+                                <img
+                                  src={iconPreview}
+                                  alt="App icon preview"
+                                  className="h-24 w-24 rounded-2xl border-2 border-border object-cover shadow-lg"
+                                />
+                                {iconUploading && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-2xl">
+                                    <Loader2 className="h-6 w-6 animate-spin text-white" />
+                                  </div>
+                                )}
+                                <button
+                                  onClick={clearIcon}
+                                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <div className="flex-1 pt-1">
+                                <p className="text-sm font-medium truncate max-w-[200px]">{iconFile?.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {iconFile ? `${(iconFile.size / 1024).toFixed(1)} KB` : ""}
+                                </p>
+                                {iconPath && (
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <Check className="h-3 w-3 text-success" />
+                                    <span className="text-xs text-success">Uploaded</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                              onDragLeave={() => setDragOver(false)}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                setDragOver(false);
+                                const file = e.dataTransfer.files[0];
+                                if (file) handleIconFile(file);
+                              }}
+                              onClick={() => {
+                                const input = document.createElement("input");
+                                input.type = "file";
+                                input.accept = "image/png,image/jpeg,image/webp";
+                                input.onchange = (ev) => {
+                                  const file = (ev.target as HTMLInputElement).files?.[0];
+                                  if (file) handleIconFile(file);
+                                };
+                                input.click();
+                              }}
+                              className={`flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
+                                dragOver
+                                  ? "border-white/40 bg-white/5"
+                                  : "border-border hover:border-white/20 hover:bg-white/[0.02]"
+                              }`}
+                            >
+                              <div className="h-10 w-10 rounded-xl bg-white/5 flex items-center justify-center">
+                                <Upload className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                              <div className="text-center">
+                                <p className="text-sm font-medium">Drop your icon here</p>
+                                <p className="text-xs text-muted-foreground">or click to browse · PNG, JPG, WEBP · max 5MB</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {iconMode === "url" && (
+                        <div className="space-y-2">
+                          <Input
+                            placeholder="https://example.com/icon.png"
+                            value={iconUrl}
+                            onChange={(e) => {
+                              setIconUrl(e.target.value);
+                              setIconError("");
+                            }}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Direct link to a PNG, JPG, or WEBP image (512×512 or larger)
+                          </p>
+                        </div>
+                      )}
+
+                      {iconError && (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <X className="h-3 w-3" />
+                          {iconError}
+                        </p>
+                      )}
+                    </div>
+
                     <div className="flex items-center justify-between py-3 border-b border-border">
                       <div>
                         <p className="text-sm font-medium">Dark Mode</p>

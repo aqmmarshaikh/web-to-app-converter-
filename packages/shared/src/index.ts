@@ -131,6 +131,8 @@ export const projectConfigSchema = z.object({
     .regex(/^#[0-9A-Fa-f]{6}$/)
     .default('#000000'),
   darkMode: z.boolean().default(false),
+  iconPath: z.string().optional(),
+  iconUrl: z.string().url().optional(),
 
   // Navigation
   bottomNavigation: z.boolean().default(false),

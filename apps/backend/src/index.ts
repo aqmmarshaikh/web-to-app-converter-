@@ -12,6 +12,7 @@ import { errorHandler } from './middleware/error';
 import projectRoutes from './routes/project.routes';
 import buildRoutes from './routes/build.routes';
 import adminRoutes from './routes/admin.routes';
+import iconRoutes from './routes/icon.routes';
 import { requestIdMiddleware } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
 import { getHealth, getDebug, getQueueDebug } from './controllers/health.controller';
@@ -90,6 +91,7 @@ app.get('/api/queue/debug', getQueueDebug);
 app.use('/api/projects', projectRoutes);
 app.use('/api/builds', buildRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/icons', iconRoutes);
 
 // Static file serving for build artifacts (temporary downloads)
 app.use('/downloads', express.static('tmp/downloads'));

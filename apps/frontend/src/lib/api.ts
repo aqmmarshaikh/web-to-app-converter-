@@ -255,6 +255,30 @@ class ApiClient {
     return this.fetch(`/api/builds/${id}/download`);
   }
 
+  async uploadIcon(file: File) {
+    const token = await this.getToken();
+    const formData = new FormData();
+    formData.append('icon', file);
+
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    // NOTE: Do NOT set Content-Type — the browser auto-sets it with the correct multipart boundary
+
+    const response = await fetch(`${this.baseUrl}/api/icons/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new ApiError(data.error || 'Icon upload failed', response.status, data.details);
+    }
+    return data;
+  }
+
   // Dashboard
   async getDashboardStats() {
     return this.fetch('/api/builds/dashboard/stats');
