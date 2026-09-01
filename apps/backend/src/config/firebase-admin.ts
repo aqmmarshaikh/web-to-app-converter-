@@ -6,7 +6,16 @@ import { env } from './env';
 
 if (!getApps().length) {
   try {
-    if (env.FIREBASE_SERVICE_ACCOUNT_PATH) {
+    if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
+      initializeApp({
+        credential: cert({
+          projectId: process.env.FIREBASE_PROJECT_ID || 'apk-converter-b4731',
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }),
+        storageBucket: env.FIREBASE_STORAGE_BUCKET || 'apk-converter-b4731.firebasestorage.app',
+      });
+    } else if (env.FIREBASE_SERVICE_ACCOUNT_PATH) {
       initializeApp({
         credential: cert(env.FIREBASE_SERVICE_ACCOUNT_PATH),
         storageBucket: env.FIREBASE_STORAGE_BUCKET,

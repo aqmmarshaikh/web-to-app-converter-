@@ -1,0 +1,48 @@
+name: Build Android APK
+
+on:
+  repository_dispatch:
+    types: [build-apk]
+  workflow_dispatch:
+    inputs:
+      buildId:
+        description: 'Build ID to compile'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Monorepo Dependencies
+        run: npm ci
+
+      - name: Build Shared Types Package
+        run: npm run build --workspace=@appforge/shared
+
+      - name: Execute Android Build Worker
+        env:
+          BUILD_ID: ${{ github.event.client_payload.buildId || inputs.buildId }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+        run: |
+          npx ts-node apps/backend/src/workers/github-worker.ts

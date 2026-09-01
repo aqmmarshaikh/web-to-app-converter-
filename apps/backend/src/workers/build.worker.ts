@@ -81,7 +81,7 @@ async function updateBuildStatus(
 /**
  * Generate an Android project from templates based on configuration.
  */
-async function generateAndroidProject(
+export async function generateAndroidProject(
   buildDir: string,
   data: BuildJobData
 ): Promise<void> {

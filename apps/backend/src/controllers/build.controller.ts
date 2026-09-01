@@ -64,7 +64,7 @@ export const createBuild = async (req: AuthRequest, res: Response): Promise<void
   try {
     const { projectId, buildType } = req.body;
 
-    if (!isRedisAvailable) {
+    if (!isRedisAvailable && !process.env.GITHUB_TOKEN) {
       res.status(503).json({
         success: false,
         error: 'Build queue service is temporarily offline. Builds are disabled but other features remain active.'
@@ -148,24 +148,55 @@ export const createBuild = async (req: AuthRequest, res: Response): Promise<void
 
     console.log(`[BUILD STAGE TRANSITION] Build ID: ${buildRef.id} -> queued`);
 
-    // Add to queue
-    await buildQueue.add(
-      'compile',
-      {
-        buildId: buildRef.id,
-        projectId: project.id,
-        websiteUrl: project.websiteUrl,
-        appType: project.appType,
-        buildType,
-        config: project.config,
-        iconUrl: project.iconUrl,
-        splashUrl: project.splashUrl,
-      },
-      {
-        jobId: buildRef.id,
-        priority: 1,
+    // Trigger GitHub Action if GITHUB_TOKEN is set
+    if (process.env.GITHUB_TOKEN && process.env.GITHUB_REPO) {
+      try {
+        const repo = process.env.GITHUB_REPO;
+        const ghResponse = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'AppForge-Backend',
+          },
+          body: JSON.stringify({
+            event_type: 'build-apk',
+            client_payload: {
+              buildId: buildRef.id,
+            },
+          }),
+        });
+
+        if (!ghResponse.ok) {
+          const errText = await ghResponse.text();
+          logger.error(`GitHub Action dispatch failed (${ghResponse.status}): ${errText}`);
+        } else {
+          logger.info(`GitHub Action build triggered successfully for build ID: ${buildRef.id}`);
+        }
+      } catch (ghErr: any) {
+        logger.error(`Failed to trigger GitHub Action dispatch: ${ghErr.message}`);
       }
-    );
+    } else if (isRedisAvailable) {
+      // Add to local queue
+      await buildQueue.add(
+        'compile',
+        {
+          buildId: buildRef.id,
+          projectId: project.id,
+          websiteUrl: project.websiteUrl,
+          appType: project.appType,
+          buildType,
+          config: project.config,
+          iconUrl: project.iconUrl,
+          splashUrl: project.splashUrl,
+        },
+        {
+          jobId: buildRef.id,
+          priority: 1,
+        }
+      );
+    }
 
     logger.info(`Build queued: ${buildRef.id} for project ${project.name}`);
 
