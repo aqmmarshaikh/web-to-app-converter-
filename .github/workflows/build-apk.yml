@@ -43,9 +43,9 @@ jobs:
       - name: Execute Android Build Worker
         env:
           BUILD_ID: ${{ github.event.client_payload.buildId || github.event.inputs.buildId }}
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID || 'apk-converter-b4731' }}
           FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
-          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET || 'apk-converter-b4731.firebasestorage.app' }}
         run: |
           node apps/backend/dist/workers/github-worker.js
