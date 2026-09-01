@@ -31,18 +31,18 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Monorepo Dependencies
+      - name: Install Dependencies
         run: npm ci
 
-      - name: Build Shared Types Package
-        run: npm run build --workspace=@appforge/shared
+      - name: Build Backend Code
+        run: npm run build:backend
 
       - name: Execute Android Build Worker
         env:
-          BUILD_ID: ${{ github.event.client_payload.buildId || inputs.buildId }}
+          BUILD_ID: ${{ github.event.client_payload.buildId || github.event.inputs.buildId }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
           FIREBASE_PRIVATE_KEY: ${{ secrets.FIREBASE_PRIVATE_KEY }}
           FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
         run: |
-          npx ts-node apps/backend/src/workers/github-worker.ts
+          node apps/backend/dist/workers/github-worker.js
