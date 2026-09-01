@@ -22,6 +22,6 @@
     "db:studio": "npm run db:studio --workspace=apps/backend"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "20.x"
   }
 }
