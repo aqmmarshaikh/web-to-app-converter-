@@ -11,7 +11,7 @@
     "dev": "npm run dev --workspaces --if-present",
     "dev:frontend": "npm run dev --workspace=apps/frontend",
     "dev:backend": "npm run dev --workspace=apps/backend",
-    "build": "npm run build --workspace=@appforge/shared && npm run build --workspaces --if-present",
+    "build": "npm run build --workspace=@appforge/shared && npm run build --workspaces --if-present && node -e \"require('fs').cpSync('apps/frontend/.next', '.next', {recursive: true})\"",
     "build:frontend": "npm run build --workspace=apps/frontend",
     "build:backend": "npm run build --workspace=@appforge/shared && npm run build --workspace=@appforge/backend",
     "lint": "npm run lint --workspaces --if-present",
